@@ -132,9 +132,10 @@ public static class ThrowExtensions
     
     public static List<List<IGrouping<uint, Die>>> GetValid(this Throw e, Die[] dice)
     {
-        List<List<IGrouping<uint, Die>>> validThrows = null;
+        List<List<IGrouping<uint, Die>>> validThrows;
         IGrouping<uint, Die>? singleDice;
         List<IGrouping<uint, Die>> tempList;
+        List<IGrouping<uint, Die>> groupingSet;
         IEnumerable<IEnumerable<IGrouping<uint, Die>>> combinations;
         switch (e)
         {
@@ -204,17 +205,68 @@ public static class ThrowExtensions
             case Throw.SMALL_STRAIGHT:
                 tempList = dice.GroupBy(die => die.Value).OrderBy(grouping => grouping.Key).Take(5).ToList();
                 // Doesn't work with 10 dice: 1,2,3,4,5 + 1,2,3,4,5
-                validThrows = tempList.Select(grouping => grouping.Key).SequenceEqual<uint>([1, 2, 3, 4, 5]) ? [tempList.ToList()] : [];
+                if (!tempList.Select(grouping => grouping.Key).SequenceEqual<uint>([1, 2, 3, 4, 5]))
+                {
+                    validThrows = [];
+                    break;
+                }
+                groupingSet = [];
+                foreach (var grouping in tempList)
+                {
+                    if (grouping.Count() == 1)
+                    {
+                        groupingSet.Add(grouping);
+                        continue;
+                    }
+                    using var it = grouping.GetEnumerator();
+                    it.MoveNext();
+                    groupingSet.AddRange(((Die[])[it.Current]).GroupBy(die => die.Value));
+                }
+                validThrows = [groupingSet.ToList()];
                 break;
             case Throw.BIG_STRAIGHT:
                 tempList = dice.GroupBy(die => die.Value).OrderBy(grouping => grouping.Key).TakeLast(5).ToList();
                 // Doesn't work with 10 dice: 2,3,4,5,6 + 2,3,4,5,6
-                validThrows = tempList.Select(grouping => grouping.Key).SequenceEqual<uint>([2, 3, 4, 5, 6]) ? [tempList.ToList()] : [];
+                if (!tempList.Select(grouping => grouping.Key).SequenceEqual<uint>([2, 3, 4, 5, 6]))
+                {
+                    validThrows = [];
+                    break;
+                }
+                groupingSet = [];
+                foreach (var grouping in tempList)
+                {
+                    if (grouping.Count() == 1)
+                    {
+                        groupingSet.Add(grouping);
+                        continue;
+                    }
+                    using var it = grouping.GetEnumerator();
+                    it.MoveNext();
+                    groupingSet.AddRange(((Die[])[it.Current]).GroupBy(die => die.Value));
+                }
+                validThrows = [groupingSet.ToList()];
                 break;
             case Throw.ROYAL_STRAIGHT:
                 tempList = dice.GroupBy(die => die.Value).OrderBy(grouping => grouping.Key).Take(6).ToList();
                 // Doesn't work with 12 dice: 1,2,3,4,5,6 + 1,2,3,4,5,6
-                validThrows = tempList.Select(grouping => grouping.Key).SequenceEqual<uint>([1, 2, 3, 4, 5, 6]) ? [tempList.ToList()] : [];
+                if (!tempList.Select(grouping => grouping.Key).SequenceEqual<uint>([1, 2, 3, 4, 5, 6]))
+                {
+                    validThrows = [];
+                    break;
+                }
+                groupingSet = [];
+                foreach (var grouping in tempList)
+                {
+                    if (grouping.Count() == 1)
+                    {
+                        groupingSet.Add(grouping);
+                        continue;
+                    }
+                    using var it = grouping.GetEnumerator();
+                    it.MoveNext();
+                    groupingSet.AddRange(((Die[])[it.Current]).GroupBy(die => die.Value));
+                }
+                validThrows = [groupingSet.ToList()];
                 break;
             case Throw.FULL_HOUSE:
                 validThrows = [];

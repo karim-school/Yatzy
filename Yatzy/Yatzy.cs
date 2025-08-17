@@ -10,10 +10,9 @@ public class Yatzy
     private readonly Die[] _dice;
     private readonly Player[] _players;
     private readonly Dictionary<Cell, uint> _values;
+    private readonly List<DiceThrow> _options;
 
-    private int _currentPlayer = -1;
-    private List<IGrouping<uint, Die>>[] _options; // TODO: Make 'Choice' class with field for Throw enum
-    private bool _done;
+    private int _currentPlayer;
     
     public Yatzy(uint dice, string[] players)
     {
@@ -23,30 +22,130 @@ public class Yatzy
         _players = players.Select(name => new Player(name.ToUpper())).ToArray();
         _values = new Dictionary<Cell, uint>(_players.Length * _throws.Length);
         for (var i = 0; i < _dice.Length; i++) _dice[i] = new Die();
+        _options = [];
     }
 
     public void Start()
     {
-        if (_done) return;
         Console.WriteLine(BuildBoard());
-        do
+        var player = _players[_currentPlayer];
+        while (GetRemainingThrows(player).Length != 0)
         {
-            _currentPlayer = (_currentPlayer + 1) % _players.Length;
-            var player = _players[_currentPlayer];
             Console.WriteLine($"It is {player.Name}'s turn.");
             RollDice();
-            Console.WriteLine($"You rolled: {string.Join(", ", _dice.Select(die => die.Value))}");
-            ListOptions();
-            var choiceIndex = GetUnsignedInt("Which combination would you like to go with?", u => u > 0 && u <= _options.Length);
-            var choice = _options[choiceIndex - 1];
-            Insert(player, null, choice);
-            _done = true;
-        } while (!_done);
-        // TODO: Announce winner
+            List<string> actions;
+            var action = "reroll";
+            var rolls = 3;
+            while (action.Equals("reroll") && rolls-- > 0)
+            {
+                Console.WriteLine($"You rolled: {string.Join(", ", _dice.Select(die => die.Value))}");
+                ListOptions(player);
+                Console.WriteLine();
+                actions = ["board", "cross"];
+                if (_options.Count > 0) actions.Add("use");
+                if (rolls > 0) actions.Add("reroll");
+                Console.WriteLine("You can undo an action by typing 'undo'");
+                var redo = true;
+                while (redo)
+                {
+                    action = GetString($"What action would you like to take? [{string.Join(", ", actions)}] ", input => actions.Any(a => a.Equals(input.ToLowerInvariant())));
+                    while (action.Equals("board"))
+                    {
+                        Console.WriteLine(BuildBoard());
+                        Console.WriteLine($"It is {player.Name}'s turn.");
+                        Console.WriteLine($"You rolled: {string.Join(", ", _dice.Select(die => die.Value))}");
+                        ListOptions(player);
+                        Console.WriteLine();
+                        action = GetString($"What action would you like to take? [{string.Join(", ", actions)}] ", input => actions.Any(a => a.Equals(input.ToLowerInvariant())));
+                    }
+                    switch (action)
+                    {
+                        case "use":
+                        {
+                            var choiceIndex = GetUnsignedInt("Which combination would you like to go with? ", true, u => u > 0 && u <= _options.Count);
+                            if (choiceIndex == null) break;
+                            var choice = _options[(int)(choiceIndex - 1)];
+                            Insert(player, choice.Throw, choice.Throw.CountDice(choice.Dice));
+                            redo = false;
+                            break;
+                        }
+                        case "cross":
+                        {
+                            var throws = GetRemainingThrows(player);
+                            for (var i = 0; i < throws.Length; i++) Console.WriteLine($"[{i + 1}] {throws[i].GetSimpleName()}");
+                            var crossThrow = GetUnsignedInt("Which throw would you like to cross? ", true, u => u > 0 && u <= throws.Length);
+                            if (crossThrow == null) break;
+                            Insert(player, throws[(int)(crossThrow - 1)], 0);
+                            redo = false;
+                            break;
+                        }
+                        case "reroll":
+                        {
+                            Console.WriteLine(string.Join("\t", _dice.Select((die, i) => $"[{i + 1}] {die.Value}")));
+                            var keep = GetUnsignedIntSet("Which dice would you like to keep? (comma separated list) ", true, u => u > 0 && u <= _dice.Length);
+                            if (keep == null) break;
+                            foreach (var die in _dice.Where((_, i) => !keep.Contains((uint)(i + 1)))) die.Roll();
+                            redo = false;
+                            break;
+                        }
+                    }                        
+                }
+            }
+            player = _players[++_currentPlayer % _players.Length];
+            Console.WriteLine();
+            Console.WriteLine("-----------------------------------------------------");
+            Console.WriteLine();
+        }
+        Dictionary<Player, uint> sums = [];
+        foreach (var participant in _players)
+        {
+            var sum = 0u;
+            var bonus = false;
+            for (var i = 0; i < _throws.Length; i++)
+            {
+                if (i == 6 && sum >= (_dice.Length > 5 ? 84 : 63)) bonus = true;
+                if (!_values.TryGetValue(new Cell(participant, _throws[i]), out var value)) continue;
+                sum += value;
+            }
+            if (bonus) sum += _dice.Length > 5 ? 100u : 50u;
+            sums[participant] = sum;
+        }
+        var orderedEntries = sums.OrderByDescending(entry => entry.Value).ToList();
+        Console.WriteLine(BuildBoard());
         Console.WriteLine("Game is over");
+        Console.WriteLine($"The winner is: {orderedEntries[0].Key.Name}");
     }
 
-    private static uint GetUnsignedInt(string prompt, Predicate<uint>? validator = null)
+    private Throw[] GetRemainingThrows(Player player)
+    {
+        var throws = _values.Where(entry => entry.Key.Player.Equals(player)).Select(entry => entry.Key.Throw).ToArray();
+        return _throws.Where(@throw => !throws.Contains(@throw)).ToArray();
+    }
+    
+    private static uint[]? GetUnsignedIntSet(string prompt, bool allowUndo, Predicate<uint>? validator = null)
+    {
+        uint[] result = [];
+        var valid = false;
+        do
+        {
+            Console.Write(prompt);
+            var input = Console.ReadLine();
+            if (input == null) continue;
+            if (allowUndo && input.ToLowerInvariant().Equals("undo")) return null;
+            var members = input.Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToArray();
+            List<uint> integers = [];
+            foreach (var member in members)
+            {
+                if (!uint.TryParse(member, out var u)) break;
+                if (!integers.Contains(u)) integers.Add(u);
+            }
+            valid = integers.Count == members.Length;
+            if (valid) result = integers.ToArray();
+        } while (!valid || (validator != null && !result.All(u => validator(u))));
+        return result;
+    }
+
+    private static uint? GetUnsignedInt(string prompt, bool allowUndo, Predicate<uint>? validator = null)
     {
         uint result;
         string? input;
@@ -54,8 +153,21 @@ public class Yatzy
         {
             Console.Write(prompt);
             input = Console.ReadLine();
+            if (input == null) continue;
+            if (allowUndo && input.ToLowerInvariant().Equals("undo")) return null;
         } while (!uint.TryParse(input, out result) || (validator != null && !validator(result)));
         return result;
+    }
+    
+    private static string GetString(string prompt, Predicate<string>? validator = null)
+    {
+        string? input;
+        do
+        {
+            Console.Write(prompt);
+            input = Console.ReadLine();
+        } while (input != null && validator != null && !validator(input));
+        return input!;
     }
 
     private void RollDice()
@@ -63,23 +175,24 @@ public class Yatzy
         foreach (var die in _dice) die.Roll();
     }
 
-    private void Insert(Player player, Throw @throw, List<IGrouping<uint, Die>> choice)
+    private void Insert(Player player, Throw @throw, uint value)
     {
-        _values[new Cell(player, @throw)] = @throw.CountDice(choice);
+        _values[new Cell(player, @throw)] = value;
+        if (value == 0) return;
+        if (@throw == Throw.YATZY) _values[new Cell(player, @throw)] += _dice.Length > 5 ? 100u : 50u;
     }
 
-    private void ListOptions()
+    private void ListOptions(Player player)
     {
-        foreach (var @throw in _throws)
+        _options.Clear();
+        foreach (var @throw in GetRemainingThrows(player))
         {
             var valid = @throw.GetValid(_dice);
-            _options = new List<IGrouping<uint, Die>>[valid.Count];
-            for (var i = 0; i < valid.Count; i++)
+            foreach (var combinations in valid)
             {
-                var combinations = valid[i];
-                _options[i] = combinations;
+                _options.Add(new DiceThrow(@throw, combinations));
                 var value = @throw.CountDice(combinations);
-                Console.WriteLine($"[{i + 1}] - {@throw.GetSimpleName()} ({value}): {string.Join(", ", combinations.Select(grouping => $"{grouping.Count()}x{grouping.Key}"))}");
+                Console.WriteLine($"[{_options.Count}] - {@throw.GetSimpleName()} ({value}): {string.Join(", ", combinations.Select(grouping => $"{grouping.Count()}x{grouping.Key}"))}");
             }
         }
     }
@@ -112,7 +225,11 @@ public class Yatzy
         var playerCells = new StringBuilder();
         foreach (var player in _players)
         {
-            if (_values.TryGetValue(new Cell(player, e), out var value)) playerCells.Append($" {value,3} |");
+            if (_values.TryGetValue(new Cell(player, e), out var value))
+            {
+                if (value == 0) playerCells.Append("  -  |");
+                else playerCells.Append($" {value,3} |");
+            }
             else playerCells.Append($"     |");
         }
         return $"{rowHeader} |{playerCells}";
@@ -131,7 +248,9 @@ public class Yatzy
                 sum += value;
             }
             sums.Append($" {sum,3} |");
-            bonuses.Append($" {(sum > (_dice.Length > 5 ? 84 : 63) ? " X " : ""),3} |");
+            if (sum > (_dice.Length > 5 ? 84 : 63)) bonuses.Append($" {(_dice.Length > 5 ? 100u : 50u),3} |");
+            else if (_throws.Take(6).Count(@throw => _values.TryGetValue(new Cell(player, @throw), out _)) == 6) bonuses.Append($"  -  |");
+            else bonuses.Append($"     |");
         }
         return $"{sums}\n{bonuses}";
     }
@@ -149,7 +268,7 @@ public class Yatzy
                 if (!_values.TryGetValue(new Cell(player, _throws[i]), out var value)) continue;
                 sum += value;
             }
-            if (bonus) sum += 50;
+            if (bonus) sum += _dice.Length > 5 ? 100u : 50u;
             sums.Append($" {sum,3} |");
         }
         return sums.ToString();
