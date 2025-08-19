@@ -4,8 +4,6 @@ namespace Yatzy;
 
 public class Yatzy
 {
-    private static readonly Random Random = new Random();
-
     private readonly Throw[] _throws;
     private readonly Die[] _dice;
     private readonly Player[] _players;
@@ -27,13 +25,12 @@ public class Yatzy
 
     public void Start()
     {
-        Console.WriteLine(BuildBoard());
         var player = _players[_currentPlayer];
         while (GetRemainingThrows(player).Length != 0)
         {
-            Console.WriteLine($"It is {player.Name}'s turn.");
             RollDice();
-            List<string> actions;
+            Console.WriteLine(BuildBoard());
+            Console.WriteLine($"It is {player.Name}'s turn.");
             var action = "reroll";
             var rolls = 3;
             while (action.Equals("reroll") && rolls-- > 0)
@@ -41,14 +38,15 @@ public class Yatzy
                 Console.WriteLine($"You rolled: {string.Join(", ", _dice.Select(die => die.Value))}");
                 ListOptions(player);
                 Console.WriteLine();
-                actions = ["board", "cross"];
+                List<string> actions = ["board", "cross"];
                 if (_options.Count > 0) actions.Add("use");
                 if (rolls > 0) actions.Add("reroll");
                 Console.WriteLine("You can undo an action by typing 'undo'");
                 var redo = true;
                 while (redo)
                 {
-                    action = GetString($"What action would you like to take? [{string.Join(", ", actions)}] ", input => actions.Any(a => a.Equals(input.ToLowerInvariant())));
+                    var actionsCopy = actions; // Necessary to suppress warning: Captured variable is modified in the outer scope
+                    action = GetString($"What action would you like to take? [{string.Join(", ", actions)}] ", input => actionsCopy.Any(a => a.Equals(input.ToLowerInvariant())));
                     while (action.Equals("board"))
                     {
                         Console.WriteLine(BuildBoard());
@@ -56,7 +54,7 @@ public class Yatzy
                         Console.WriteLine($"You rolled: {string.Join(", ", _dice.Select(die => die.Value))}");
                         ListOptions(player);
                         Console.WriteLine();
-                        action = GetString($"What action would you like to take? [{string.Join(", ", actions)}] ", input => actions.Any(a => a.Equals(input.ToLowerInvariant())));
+                        action = GetString($"What action would you like to take? [{string.Join(", ", actions)}] ", input => actionsCopy.Any(a => a.Equals(input.ToLowerInvariant())));
                     }
                     switch (action)
                     {
@@ -284,77 +282,28 @@ public class Yatzy
         {
             builder.AppendLine(BuildThrow(@throw));
         }
+
+        var diceRow1 = ConcatDice(0, 3, 5);
+        var diceRow2 = ConcatDice(3, (uint)(_dice.Length > 5 ? 3 : 2), 5);
+        var margin = new string(' ', 5);
+        var rowIndex = 0;
+        
         builder.AppendLine(hr);
-        builder.AppendLine(BuildBonus());
-        builder.AppendLine(hr);
+        builder.Append(BuildBonus()).Append(margin).AppendLine(diceRow1[rowIndex++]);
+        builder.Append(hr).Append(margin).AppendLine(diceRow1[rowIndex++]);
         foreach (var @throw in _throws.Skip(6))
         {
-            builder.AppendLine(BuildThrow(@throw));
+            builder.Append(BuildThrow(@throw));
+            if (rowIndex < diceRow1.Length) builder.Append(margin).AppendLine(diceRow1[rowIndex++]);
+            else if (rowIndex - diceRow1.Length < diceRow2.Length)
+            {
+                if (_dice.Length == 5) builder.Append(new string(' ', 8));
+                builder.Append(margin).AppendLine(diceRow2[rowIndex++ - diceRow1.Length]);
+            }
+            else builder.AppendLine();
         }
         builder.AppendLine(hr);
         builder.AppendLine(BuildSum());
-        builder.AppendLine(hr);
-        return builder.ToString();
-    }
-    
-    public string GetBoardString()
-    {
-        var builder = new StringBuilder();
-        var drawDice = _dice.Any(die => die.Value != 0);
-        var playerColumns = new StringBuilder();
-        foreach (var player in _players) playerColumns.Append($" {player.Name,3} |");
-        var hr = "-----------------------" + new string('-', playerColumns.Length);
-        builder.AppendLine(hr);
-        builder.AppendLine($"| Maximum points      |{playerColumns}");
-        builder.AppendLine(hr);
-        var emptyCells = string.Concat(Enumerable.Repeat("     |", _players.Length));
-        if (drawDice)
-        {
-            var dice = ConcatDice(0, 3, 3);
-            var margin = new string(' ', 5);
-            builder.Append($"| 1'ere            {_dice.Length,2} |{emptyCells}").Append(margin).Append(dice[0]).AppendLine();
-            builder.Append($"| 2'ere            {_dice.Length * 2,2} |{emptyCells}").Append(margin).Append(dice[1]).AppendLine();
-            builder.Append($"| 3'ere            {_dice.Length * 3,2} |{emptyCells}").Append(margin).Append(dice[2]).AppendLine();
-            builder.Append($"| 4'ere            {_dice.Length * 4,2} |{emptyCells}").Append(margin).Append(dice[3]).AppendLine();
-            builder.Append($"| 5'ere            {_dice.Length * 5,2} |{emptyCells}").Append(margin).Append(dice[4]).AppendLine();
-        }
-        else
-        {
-            builder.AppendLine($"| 1'ere            {_dice.Length,2} |{emptyCells}");
-            builder.AppendLine($"| 2'ere            {_dice.Length * 2,2} |{emptyCells}");
-            builder.AppendLine($"| 3'ere            {_dice.Length * 3,2} |{emptyCells}");
-            builder.AppendLine($"| 4'ere            {_dice.Length * 4,2} |{emptyCells}");
-            builder.AppendLine($"| 5'ere            {_dice.Length * 5,2} |{emptyCells}");
-        }
-        builder.AppendLine($"| 6'ere            {_dice.Length * 6,2} |{emptyCells}");
-        if (drawDice)
-        {
-            var dice = ConcatDice(3, _dice.Length > 5 ? 3u : 2u, 3);
-            var margin = new string(' ', _dice.Length > 5 ? 5 : 13);
-            builder.Append(hr).Append(margin).Append(dice[0]).AppendLine();
-            builder.Append($"| SUM                 |{emptyCells}").Append(margin).Append(dice[1]).AppendLine();
-            builder.Append($"| Bonus           {(_dice.Length > 5 ? 100 : 50),3} |{emptyCells}").Append(margin).Append(dice[2]).AppendLine();
-            builder.Append(hr).Append(margin).Append(dice[3]).AppendLine();
-            builder.Append($"| 1 par            12 |{emptyCells}").Append(margin).Append(dice[4]).AppendLine();
-        }
-        else
-        {
-            builder.AppendLine($"-----------------------------------------------------");
-            builder.AppendLine($"| SUM                 |    |    |    |    |    |    |");
-            builder.AppendLine($"| Bonus           {(_dice.Length > 5 ? 100 : 50),3} |    |    |    |    |    |    |");
-            builder.AppendLine($"-----------------------------------------------------");
-            builder.AppendLine($"| 1 par            12 |    |    |    |    |    |    |");
-        }
-        builder.AppendLine($"| 2 par            22 |{emptyCells}");
-        builder.AppendLine($"| 3 ens            18 |{emptyCells}");
-        builder.AppendLine($"| 4 ens            24 |{emptyCells}");
-        builder.AppendLine($"| Lille straight   15 |{emptyCells}");
-        builder.AppendLine($"| Stor straight    20 |{emptyCells}");
-        builder.AppendLine($"| Hus              28 |{emptyCells}");
-        builder.AppendLine($"| Chance           {_dice.Length * 6,2} |{emptyCells}");
-        builder.AppendLine($"| YATZY           {(_dice.Length > 5 ? 100 : 50),3} |{emptyCells}");
-        builder.AppendLine(hr);
-        builder.AppendLine($"| SUM                 |{emptyCells}");
         builder.AppendLine(hr);
         return builder.ToString();
     }
